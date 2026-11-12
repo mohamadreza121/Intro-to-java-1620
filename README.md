@@ -57,7 +57,7 @@ node server.mjs
 - Code lab with line numbers, Tab indentation, autosave, explicit Save and keyboard shortcuts.
 - Real compile/run using your installed JDK; compiler errors and runtime errors are shown in the console.
 - Multi-file Java projects: all `.java` files in the selected file's folder compile together. Select the file containing `main` before running. Keep separate exercises in separate folders. All source files in the folder must compile, even unused ones. Nested source folders and third-party dependencies are not included in this version.
-- Standard input: enter all Scanner answers in the input box, one answer per line, before pressing Run. The input stream closes after these answers. This version uses pre-supplied input rather than a live interactive terminal.
+- Live standard input: press Run, wait for your prompt, then type an answer and press Enter or Send. Empty Enter sends a real blank line; Shift+Enter adds a line for pasting multiple answers. Java input stays open until the program exits or you press Stop. Use sample loads an example into the input box without sending it. Sample-test checks still supply their inputs automatically.
 - Local file/folder creation, rename, document import/download and recoverable trash. Document import limit: 20 MB per file. Java/text files open in the editor; binary lecture files download to open in their usual apps.
 - Personal notes, three dark themes, saved activity and a JSON progress export.
 - 34 coding and debugging tasks with closed-by-default hints and solutions. Open a starter or saved copy in the lab and use **Check sample tests** for input/expected/actual comparisons.
@@ -69,7 +69,7 @@ Shortcuts: **Ctrl+S** save, **Ctrl+Enter** run Java, **Ctrl+K** search, **Tab** 
 
 ## Runtime behaviour
 
-The server listens on `127.0.0.1` by default and requires a per-launch token for API calls. It rejects workspace traversal and symlink paths. Java runs as your local user, with ordinary Java access to your computer; it is not a security sandbox. Run your own practice code here. Each compile/run stage has a 15-second limit, output is capped, and the Java process receives a 128 MB heap limit. Each sample-test execution has a separate 4-second limit. Only one program runs at a time. No shell interpolation is used for compilation.
+The server listens on `127.0.0.1` by default and requires a per-launch token for API calls. It rejects workspace traversal and symlink paths. Java runs as your local user, with ordinary Java access to your computer; it is not a security sandbox. Run your own practice code here. Compilation and batch runs have a 15-second limit. Interactive runs allow 10 minutes, including time spent waiting for input, and can be stopped at any time. Output is capped, and the Java process receives a 128 MB heap limit. Each sample-test execution has a separate 4-second limit. Only one program runs at a time. No shell interpolation is used for compilation.
 
 `npm run dev` is an internal preview mode that binds to all interfaces; use **START.cmd** or **npm start** for normal local work. Change the local port with the `PORT` environment variable if 1620 is already in use. The data root defaults to the app folder regardless of the terminal's working directory.
 
@@ -80,7 +80,7 @@ npm start
 npm test
 ```
 
-The integration checks start an isolated server and use a temporary data directory. They cover Java compilation, multi-file projects, Scanner input, compiler/runtime errors, disk persistence, file operations and request/path protections. A JDK is required for those checks.
+The integration checks start an isolated server and use a temporary data directory. They cover Java compilation, multi-file projects, Scanner input, live prompts, repeated blank lines, Stop, compiler/runtime errors, disk persistence, file operations and request/path protections. A JDK is required for those checks.
 
 ## Using the course
 

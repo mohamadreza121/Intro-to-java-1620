@@ -88,3 +88,63 @@ test('desktop assets are served locally and window preferences preserve existing
   await api('state',{desktop});await stop();await start();const b=await api('bootstrap');
   assert.deepEqual(b.state.desktop,desktop);assert.equal(b.state.notes,'A saved insight');assert.equal(b.state.checks['mock:library'].passed,3);
 });
+
+async function waitForLive(id, predicate) {
+  const deadline=Date.now()+10000;
+  while(Date.now()<deadline){
+    const session=await api('live?id='+id);
+    assert.equal(session.status,200);
+    if(predicate(session))return session;
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  throw new Error('Live run did not reach the expected state.');
+}
+test('live Scanner prompts arrive before input and accept repeated blank lines',async()=>{
+  await api('file',{path:'live/Main.java',content:`import java.util.Scanner;
+public class Main { public static void main(String[] args) {
+  Scanner scan=new Scanner(System.in);System.out.print("Enter your name: ");
+  String name=scan.nextLine();while(name.isEmpty()) {
+    System.out.print("Cannot leave it empty; try again: ");name=scan.nextLine();
+  }
+  System.out.println("Name: "+name);scan.close();
+} }`});
+  const before=(await api('bootstrap')).state.runs;
+  const run=await api('live/start',{path:'live/Main.java'});assert.equal(run.status,200);
+  const prompted=await waitForLive(run.id,s=>s.output==='Enter your name: ');
+  assert.equal(prompted.phase,'running');assert.equal(prompted.code,0);
+  // Waiting for the student must not hit the old 15-second batch timeout.
+  await new Promise(resolve=>setTimeout(resolve,15500));
+  assert.equal((await api('live?id='+run.id)).phase,'running');
+  assert.equal((await api('live/start',{path:'playground/Main.java'})).status,409);
+  assert.equal((await api('check',{path:'checks/Main.java',challenge:'exercise:multiples'})).status,409);
+  assert.equal((await api('live/input',{id:run.id,input:''})).status,200);
+  await waitForLive(run.id,s=>s.output.includes('Cannot leave it empty; try again: '));
+  assert.equal((await api('live/input',{id:run.id,input:''})).status,200);
+  await waitForLive(run.id,s=>s.output.split('Cannot leave it empty; try again: ').length===3);
+  const reconnected=(await api('bootstrap')).live;assert.equal(reconnected.id,run.id);assert.equal(reconnected.phase,'running');
+  await api('live/input',{id:run.id,input:'Reza'});
+  const done=await waitForLive(run.id,s=>s.phase==='finished');
+  assert.equal(done.code,0);assert.equal(done.runs,before+1);
+  assert.equal(done.output,'Enter your name: \nCannot leave it empty; try again: \nCannot leave it empty; try again: Reza\nName: Reza\n');
+  assert.doesNotMatch(done.output,/NoSuchElementException/);
+  const tail=await api('live?id='+run.id+'&cursor='+prompted.cursor);assert.equal(tail.output,done.output.slice(prompted.cursor));
+  assert.equal((await api('live/input',{id:run.id,input:'too late'})).status,409);
+});
+test('live Stop cancels waiting programs and the runner can start again',async()=>{
+  const run=await api('live/start',{path:'live/Main.java'});
+  await waitForLive(run.id,s=>s.output.includes('Enter your name: '));
+  assert.equal((await api('live/stop',{id:run.id})).status,200);
+  const stopped=await waitForLive(run.id,s=>s.phase==='finished');assert.equal(stopped.stopped,true);assert.notEqual(stopped.code,0);assert.match(stopped.output,/Stopped by you/);
+  const next=await api('live/start',{path:'playground/Main.java'});
+  const done=await waitForLive(next.id,s=>s.phase==='finished');assert.equal(done.code,0);assert.match(done.output,/saved version/);
+});
+test('live compile errors and immediate Stop release the runner and clean builds',async()=>{
+  await api('file',{path:'live-broken/Main.java',content:'public class Main { invalid syntax }'});
+  const broken=await api('live/start',{path:'live-broken/Main.java'});
+  const failed=await waitForLive(broken.id,s=>s.phase==='finished');assert.equal(failed.stage,'compile');assert.notEqual(failed.code,0);assert.match(failed.output,/error/);
+  const cancel=await api('live/start',{path:'live/Main.java'});await api('live/stop',{id:cancel.id});
+  assert.equal((await waitForLive(cancel.id,s=>s.phase==='finished')).stopped,true);
+  assert.deepEqual(await readdir(path.join(root,'.1620','build')),[]);
+  assert.equal((await api('live/start',{path:'../escape.java'})).status,400);
+  assert.equal((await api('live/input',{id:'missing',input:''})).status,404);
+});

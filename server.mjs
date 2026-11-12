@@ -19,6 +19,10 @@ const HELLO = 'public class Main {\n    public static void main(String[] args) {
 let state = { notes: '', runs: 0, completed: [], lastFile: 'playground/Main.java', theme: 'graphite', recentRuns: [], mock: null, checks: {}, bookmarked: [], activeChallenge: null, mockReview: {}, lessonAnswers: {} };
 let writeQueue = Promise.resolve();
 let running = false;
+const sessions = new Map();
+process.on('exit', () => { for (const session of sessions.values()) session.child?.kill(); });
+process.once('SIGTERM', () => process.exit(0));
+process.once('SIGINT', () => process.exit(0));
 await fs.mkdir(WORK, { recursive: true });
 await fs.mkdir(DATA, { recursive: true });
 try { state = { ...state, ...JSON.parse(await fs.readFile(path.join(DATA, 'state.json'), 'utf8')) }; }
@@ -59,7 +63,7 @@ async function tree(dir = WORK, prefix = '') {
   }
   return out;
 }
-function execute(args, cwd, input = '', timeout = 15000) {
+function execute(args, cwd, input = '', timeout = 15000, onSpawn) {
   return new Promise(resolve => {
     let output = '', done = false, timedOut = false, truncated = false;
     const child = spawn(JAVA, args, { cwd, windowsHide: true, shell: false });
@@ -72,12 +76,71 @@ function execute(args, cwd, input = '', timeout = 15000) {
     child.stdin.on('error', () => {});
     child.on('error', err => finish(-1, err.code === 'ENOENT' ? 'Java was not found. Install a JDK 17 or newer, then restart the app.' : err.message));
     child.on('close', code => finish(code ?? -1));
+    onSpawn?.(child);
     function finish(code, error = '') {
       if (done) return; done = true; clearTimeout(timer);
       resolve({ code, output: output + (error ? '\n' + error : '') + (timedOut ? `\nStopped: ${timeout / 1000}-second limit reached.` : '') + (truncated ? '\nStopped: output limit reached.' : ''), timedOut });
     }
     child.stdin.end(input);
   });
+}
+function sessionView(session, cursor = 0) {
+  return { id:session.id, file:session.file, startedAt:session.startedAt, phase:session.phase, output:session.output.slice(cursor), cursor:session.output.length,
+    stage:session.stage, code:session.code, stopped:session.stopped, timedOut:session.timedOut,
+    ...(session.phase === 'finished' ? { runs:state.runs, recentRuns:state.recentRuns } : {}) };
+}
+async function liveRun(session, selected) {
+  const build = path.join(DATA,'build',session.id);
+  let timer;
+  const append = chunk => {
+    const text = String(chunk);
+    if (session.output.length + text.length > 180000) {
+      if (!session.truncated) {
+        session.truncated = true;
+        session.output += '\nStopped: output limit reached.\n';
+        session.child?.kill();
+      }
+      return;
+    }
+    session.output += text;
+  };
+  try {
+    await fs.mkdir(build,{recursive:true});
+    const cwd = path.dirname(selected), source = await fs.readFile(selected,'utf8');
+    const packageName = source.match(/^\s*package\s+([\w.]+)\s*;/m)?.[1];
+    const sources = (await fs.readdir(cwd)).filter(x=>x.endsWith('.java')).map(x=>'./'+x);
+    const compile = await execute(['-m','jdk.compiler/com.sun.tools.javac.Main','-encoding','UTF-8','-d',build,...sources],cwd,'',15000,child=>{
+      session.child=child;
+      if (session.stopped) child.kill();
+    });
+    session.child=null;
+    append(compile.output);
+    session.code=compile.code; session.timedOut=compile.timedOut;
+    if (compile.code === 0 && !session.stopped) {
+      session.stage='run'; session.phase='running';
+      const className = path.basename(selected,'.java');
+      await new Promise(resolve=>{
+        const child=spawn(JAVA,['-Xmx128m','-cp',build,packageName ? packageName+'.'+className : className],{cwd,windowsHide:true,shell:false});
+        session.child=child;
+        child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+        child.stdout.on('data',append); child.stderr.on('data',append);
+        child.stdin.on('error',()=>{});
+        child.on('error',e=>{append('\n'+e.message);session.code=-1;});
+        child.on('close',code=>{session.code=code ?? -1;resolve();});
+        // Interactive programs can wait for answers; Stop is always available.
+        timer=setTimeout(()=>{session.timedOut=true;append('\nStopped: 10-minute session limit reached.\n');child.kill();},600000);
+      });
+    }
+    if (session.stopped) { session.code=-1; append('\n> Stopped by you.\n'); }
+  } catch(e) { session.code=-1; append('\n'+e.message); }
+  finally {
+    clearTimeout(timer); session.child=null;
+    state.runs++; state.recentRuns.unshift({file:session.file,time:new Date().toISOString(),code:session.code,stage:session.stage});
+    state.recentRuns=state.recentRuns.slice(0,20);
+    try { await persist(); await fs.rm(build,{recursive:true,force:true}); }
+    catch(e) { append('\nCould not finish saving run history: '+e.message); }
+    running=false; session.phase='finished';
+  }
 }
 const runtime = await execute(['-version'], ROOT);
 const compiler = await execute(['-m', 'jdk.compiler/com.sun.tools.javac.Main', '-version'], ROOT);
@@ -97,7 +160,14 @@ const server = http.createServer(async (req, res) => {
     if (!PREVIEW && !['127.0.0.1', 'localhost', '[::1]'].includes(new URL('http://' + req.headers.host).hostname)) return json(res, 403, { error: 'Local host only.' });
     if (url.pathname.startsWith('/api/')) {
       if (req.headers['x-lab-token'] !== TOKEN || (req.headers['sec-fetch-site'] && !['same-origin','none'].includes(req.headers['sec-fetch-site']))) return json(res, 403, { error:'Open the lab from its local address.' });
-      if (req.method === 'GET' && url.pathname === '/api/bootstrap') return json(res, 200, { state, files: await tree(), root:ROOT, workspace:WORK, java:{ ready, version:runtime.output.trim(), compiler:compiler.output.trim() }, phase:'course' });
+      if (req.method === 'GET' && url.pathname === '/api/bootstrap') return json(res, 200, { state, files: await tree(), root:ROOT, workspace:WORK, java:{ ready, version:runtime.output.trim(), compiler:compiler.output.trim() }, live:[...sessions.values()].find(x=>x.phase!=='finished') ? sessionView([...sessions.values()].find(x=>x.phase!=='finished')) : null, phase:'course' });
+      if (req.method === 'GET' && url.pathname === '/api/live') {
+        const session=sessions.get(url.searchParams.get('id'));
+        if (!session) return json(res,404,{error:'This run is no longer available. Press Run to start again.'});
+        const cursor=Number(url.searchParams.get('cursor') || 0);
+        if (!Number.isInteger(cursor) || cursor<0 || cursor>session.output.length) throw new Error('Invalid output cursor.');
+        return json(res,200,sessionView(session,cursor));
+      }
       if (req.method === 'GET' && url.pathname === '/api/file') {
         const target = await safePath(url.searchParams.get('path'));
         const stat = await fs.stat(target);
@@ -112,6 +182,34 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method !== 'POST') return json(res, 404, { error:'Unknown endpoint.' });
       const body = await readBody(req);
+      if (url.pathname === '/api/live/input' || url.pathname === '/api/live/stop') {
+        const session=sessions.get(body.id);
+        if (!session) return json(res,404,{error:'This run is no longer available.'});
+        if (url.pathname.endsWith('/stop')) {
+          if (session.phase !== 'finished') { session.stopped=true; session.child?.kill(); }
+        } else {
+          if (session.phase !== 'running' || session.stopped || !session.child?.stdin.writable) return json(res,409,{error:'The program is not accepting input.'});
+          if (typeof body.input !== 'string' || body.input.length>16000) throw new Error('Send at most 16,000 characters at once.');
+          const input=body.input.endsWith('\n') ? body.input : body.input+'\n';
+          if (session.output.length+input.length>180000) throw new Error('Console output limit reached. Stop and run again.');
+          session.output+=input; // Echo exactly what was typed, including a blank line.
+          session.child.stdin.write(input);
+        }
+        return json(res,200,{ok:true});
+      }
+      if (url.pathname === '/api/live/start') {
+        if (running) return json(res,409,{error:'A program is already running. Stop it before starting another.'});
+        if (!ready) throw new Error('Install a JDK 17 or newer and restart the app to run Java.');
+        const selected=await safePath(body.path);
+        if (!/^[A-Za-z_$][\w$]*\.java$/.test(path.basename(selected))) throw new Error('Select a Java file with a valid class name.');
+        await fs.access(selected);
+        if (running) return json(res,409,{error:'A program is already running.'});
+        for (const [id,old] of sessions) if (old.phase==='finished' && sessions.size>=10) sessions.delete(id);
+        const session={id:randomUUID(),file:body.path,startedAt:Date.now(),phase:'compiling',stage:'compile',output:'',code:null,stopped:false,timedOut:false,child:null};
+        running=true; sessions.set(session.id,session);
+        void liveRun(session,selected);
+        return json(res,200,sessionView(session));
+      }
       if (url.pathname === '/api/state') {
         for (const key of ['notes','completed','lastFile','theme','mock','bookmarked','activeChallenge','mockReview','lessonAnswers','desktop']) if (Object.hasOwn(body,key)) state[key] = body[key];
         await persist(); return json(res,200,{ state });
@@ -152,6 +250,7 @@ const server = http.createServer(async (req, res) => {
         const source = await fs.readFile(selected, 'utf8');
         const packageName = source.match(/^\s*package\s+([\w.]+)\s*;/m)?.[1];
         if (packageName && !/^[\w.]+$/.test(packageName)) throw new Error('Invalid package name.');
+        if (running) return json(res,409,{error:'A program is already running.'});
         running = true;
         const build = path.join(DATA,'build',randomUUID());
         try {

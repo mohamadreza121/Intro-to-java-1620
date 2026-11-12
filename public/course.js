@@ -199,7 +199,7 @@ export const lessons = [
     "points": [
       "import java.util.Scanner makes the Scanner type available by its short name. new Scanner(System.in) creates an object connected to standard input.",
       "nextInt reads an integer token, nextDouble reads a decimal token, and next reads one token of text. Whitespace normally separates tokens.",
-      "In this lab, put all answers in Standard input before Run. Each run gets a fresh JVM. Close scan after the program has finished reading."
+      "In this lab, press Run, then enter each answer in Live input and press Enter or Send. Empty Enter sends a blank line. Each run gets a fresh JVM. Close scan after the program has finished reading."
     ],
     "files": {
       "Main.java": "import java.util.Scanner;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner scan = new Scanner(System.in);\n        int nets = scan.nextInt();\n        double price = scan.nextDouble();\n        System.out.printf(java.util.Locale.US, \"Cost: %.2f%n\", nets * price);\n        scan.close();\n    }\n}\n"
