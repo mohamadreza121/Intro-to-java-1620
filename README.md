@@ -1,6 +1,6 @@
 # 1620 — Java, understood.
 
-A Windows 7 inspired, local-first study desktop for Introduction to Java. Monochrome graphite Aero windows, a real Java lab, and your own files on disk. **Build 0.3 includes the course content:** 50 lessons in eight modules, 84 reference entries, 34 coding/debugging tasks, and three original mock tests. The explanations and scenarios are based on the uploaded lecture topics, with original modern examples.
+A Windows 7 inspired, local-first study desktop for Introduction to Java. Monochrome graphite Aero windows, a real Java lab, and your own files on disk. **Build 0.4 adds source tabs, helper-class templates and two independent desktop windows.** The course content includes: 50 lessons in eight modules, 84 reference entries, 34 coding/debugging tasks, and three original mock tests. The explanations and scenarios are based on the uploaded lecture topics, with original modern examples.
 
 ## Run on Reza's Windows computer
 
@@ -54,7 +54,9 @@ node server.mjs
 - Overview with actual file and program-attempt counts.
 - Eight learning modules with 50 concise lessons, runnable examples, execution explanations, common mistakes and open-ended knowledge checks. Lesson completion, personal answers and bookmarks are saved on disk.
 - 84 searchable reference entries with syntax, example results and common mistakes. Global search includes lessons, commands, exercises, mocks and filenames.
-- Code lab with line numbers, Tab indentation, autosave, explicit Save and keyboard shortcuts.
+- Code lab with persistent source-file tabs, line numbers, Tab indentation, autosave, explicit Save and keyboard shortcuts. Open several files in the same project; Run saves all edited tabs first. Run class defaults to Main, so you can run the program while editing a helper file. New Java class offers a runnable main template or a helper-method template. Methods project opens a separate, non-destructive two-file example.
+- Two independent application windows: open Notepad beside Command Prompt, or keep a lesson beside your code. Left/right title-bar buttons (or Ctrl+Alt+Left/Right) tile the two windows. Each can move, resize, minimize, maximize, close and restore from the taskbar. The second window and layout survive reloads. Opening a third application replaces the focused window after saving. Narrow screens stack tiled windows vertically.
+- Brighter monochrome interface text and larger reading text; all code remains CMD 0A: #00FF00 on #000000.
 - Real compile/run using your installed JDK; compiler errors and runtime errors are shown in the console.
 - Multi-file Java projects: all `.java` files in the selected file's folder compile together. Select the file containing `main` before running. Keep separate exercises in separate folders. All source files in the folder must compile, even unused ones. Nested source folders and third-party dependencies are not included in this version.
 - Live standard input: press Run, wait for your prompt, then type an answer and press Enter or Send. Empty Enter sends a real blank line; Shift+Enter adds a line for pasting multiple answers. Java input stays open until the program exits or you press Stop. Use sample loads an example into the input box without sending it. Sample-test checks still supply their inputs automatically.

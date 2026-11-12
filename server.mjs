@@ -211,7 +211,7 @@ const server = http.createServer(async (req, res) => {
         return json(res,200,sessionView(session));
       }
       if (url.pathname === '/api/state') {
-        for (const key of ['notes','completed','lastFile','theme','mock','bookmarked','activeChallenge','mockReview','lessonAnswers','desktop']) if (Object.hasOwn(body,key)) state[key] = body[key];
+        for (const key of ['notes','completed','lastFile','theme','mock','bookmarked','activeChallenge','mockReview','lessonAnswers','desktop','editorTabs']) if (Object.hasOwn(body,key)) state[key] = body[key];
         await persist(); return json(res,200,{ state });
       }
       if (url.pathname === '/api/file') {
@@ -283,7 +283,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method !== 'GET') return json(res,405,{error:'Method not allowed.'});
     const asset = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-    if (!['index.html','app.js','style.css','favicon.svg','course.js','aero.css','desktop.js','icons.svg','wallpaper.jpg'].includes(asset)) return json(res,404,{error:'Not found.'});
+    if (!['index.html','app.js','style.css','favicon.svg','course.js','aero.css','desktop.js','icons.svg','wallpaper.jpg','windows.js'].includes(asset)) return json(res,404,{error:'Not found.'});
     let bytes = await fs.readFile(path.join(APP,'public',asset));
     if (asset === 'index.html') bytes = bytes.toString().replace('__LAB_TOKEN__',TOKEN);
     res.setHeader('Content-Type',mime[path.extname(asset)] || 'text/plain'); res.setHeader('Cache-Control','no-store'); res.end(bytes);

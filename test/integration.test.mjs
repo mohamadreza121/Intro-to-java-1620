@@ -81,7 +81,7 @@ test('library mock sample tests run with separate classes and persist course pro
   const source=await fetch(base+'/course.js');assert.equal(source.status,200);assert.match(await source.text(),/courseModules/);
 });
 test('desktop assets are served locally and window preferences preserve existing state',async()=>{
-  for(const asset of ['desktop.js','aero.css','icons.svg'])assert.equal((await fetch(base+'/'+asset)).status,200);
+  for(const asset of ['desktop.js','windows.js','aero.css','icons.svg'])assert.equal((await fetch(base+'/'+asset)).status,200);
   const wallpaper=await fetch(base+'/wallpaper.jpg');assert.equal(wallpaper.headers.get('content-type'),'image/jpeg');
   const bytes=new Uint8Array(await wallpaper.arrayBuffer());assert.equal(bytes[0],255);assert.equal(bytes[1],216);
   const desktop={geometry:{x:150,y:70,width:1000,height:700},maximized:false,compact:true,wordWrap:false};
@@ -147,4 +147,22 @@ test('live compile errors and immediate Stop release the runner and clean builds
   assert.deepEqual(await readdir(path.join(root,'.1620','build')),[]);
   assert.equal((await api('live/start',{path:'../escape.java'})).status,400);
   assert.equal((await api('live/input',{id:'missing',input:''})).status,404);
+});
+
+test('Main calls static and instance methods from saved sibling classes during a live run',async()=>{
+  await api('file',{path:'methods/Main.java',content:'public class Main { public static void main(String[] args) { System.out.println(Functions.triple(7)); System.out.println(new Greeter().greet("Reza")); } }'});
+  await api('file',{path:'methods/Functions.java',content:'public class Functions { public static int triple(int n) { return n * 3; } }'});
+  await api('file',{path:'methods/Greeter.java',content:'public class Greeter { public String greet(String name) { return "Hello, " + name; } }'});
+  const run=await api('live/start',{path:'methods/Main.java'});
+  const done=await waitForLive(run.id,s=>s.phase==='finished');assert.equal(done.code,0);assert.equal(done.output,'21\nHello, Reza\n');
+  await api('file',{path:'methods/Functions.java',content:'public class Functions { public static int triple(int n) { return n * 3 + 1; } }'});
+  const edited=await api('live/start',{path:'methods/Main.java'});
+  assert.equal((await waitForLive(edited.id,s=>s.phase==='finished')).output,'22\nHello, Reza\n');
+});
+test('source tabs and a second window arrangement survive a server restart',async()=>{
+  const editorTabs=['methods/Main.java','methods/Functions.java','methods/Greeter.java'];
+  const desktop={geometry:{x:6,y:6,width:680,height:800},layout:'side-by-side',secondary:{route:'#notes',visible:true,geometry:{x:692,y:6,width:680,height:800},maximized:false}};
+  await api('state',{editorTabs,desktop});await stop();await start();
+  const b=await api('bootstrap');assert.deepEqual(b.state.editorTabs,editorTabs);assert.deepEqual(b.state.desktop,desktop);assert.equal(b.state.notes,'A saved insight');
+  const embedded=await fetch(base+'/?pane=1');assert.equal(embedded.status,200);assert.match(await embedded.text(),/lab-token/);
 });

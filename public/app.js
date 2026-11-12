@@ -5,9 +5,12 @@ const $$ = (s, root=document) => [...root.querySelectorAll(s)];
 const token = $('meta[name="lab-token"]').content;
 const main = $('#main');
 const modal = $('#modal');
+if(new URLSearchParams(location.search).has('pane'))document.body.classList.add('embedded-pane');
 let S, route='home', routeVersion=0, activeFile='', saveTimer, noteTimer, toastTimer, saving=Promise.resolve(), noteSaving=Promise.resolve();
 const drafts = new Map();
 const collapsedFolders = new Set();
+const editorPositions = new Map();
+let fileVersion=0, runTarget="";
 let desktopUI, liveSession=null, sendingInput=false, sampleInput="";
 const icons = {
   home:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -29,10 +32,16 @@ const attr = esc;
 function toast(text,error=false) { const el=$('#toast');el.textContent=text;el.className='show'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='',5500); }
 async function api(endpoint,body) {
   const res=await fetch('/api/'+endpoint,{method:body===undefined?'GET':'POST',headers:{'x-lab-token':token,...(body===undefined?{}:{'Content-Type':'application/json'})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-  const result=await res.json();if(!res.ok)throw new Error(result.error||'Request failed.');return result;
+  const result=await res.json();if(!res.ok)throw new Error(result.error||'Request failed.');if(body!==undefined&&['file','folder','rename','trash'].includes(endpoint))syncChannel?.postMessage({files:true});return result;
 }
 function showDialog(html) { $('#modal-content').innerHTML=html;modal.showModal();setTimeout(()=>$('#modal-content input')?.focus(),30); }
-async function statePatch(patch) { await api('state',patch);Object.assign(S.state,patch); }
+const syncChannel=typeof BroadcastChannel!=='undefined'?new BroadcastChannel('java1620-desktop'):null;
+async function statePatch(patch) { await api('state',patch);Object.assign(S.state,patch);syncChannel?.postMessage({state:patch}); }
+syncChannel?.addEventListener('message',async e=>{
+  if(!S)return;
+  if(e.data.state){const oldNotes=S.state.notes;Object.assign(S.state,e.data.state);if($('#notes-text')&&$('#notes-text').value===oldNotes)$('#notes-text').value=S.state.notes;theme();}
+  if(e.data.files){try{S.files=(await api('bootstrap')).files;if($('#file-tree')){$('#file-tree').innerHTML=explorer();bindCommon();drawEditorTabs();}}catch(e){fail(e);}}
+});
 function enqueueSave() {
   clearTimeout(saveTimer);
   saving=saving.catch(()=>{}).then(async()=>{
@@ -40,7 +49,7 @@ function enqueueSave() {
       await api('file',{path:file,content});
       if(drafts.get(file)===content)drafts.delete(file);
     }
-    const label=$('#save-label');if(label)label.textContent=drafts.size?'Unsaved changes':'Saved to disk';
+    const label=$('#save-label');if(label)label.textContent=drafts.size?'Unsaved changes':'Saved to disk';drawEditorTabs();
   });
   return saving;
 }
@@ -68,7 +77,7 @@ function explorer() {
 function lab() {
   const context=S.state.activeChallenge, task=challengeFor(context?.key);
   const taskNotice=task?`<div class="challenge-context"><div><span class="small-label">${context.solution?'SOLUTION COPY':'ACTIVE PRACTICE'}</span><strong>${esc(task.title)}</strong><a href="#${context.key.startsWith('mock:')?'mocks':'practice'}/${task.id}">Back to brief →</a></div><button class="btn ghost compact" id="check-code">Check sample tests</button></div>`:'';
-  return heading('04 / THE CODE LAB','Command Prompt — Java Lab','Real Java. Your files. Room to try, break, fix and understand.',`<button class="btn ghost" data-action="new-file">+ New file</button>`)+`${!S.java.ready?'<div class="notice">Java needs a JDK 17 or newer. The editor and file saving work now; install your JDK and restart to enable Run.</div>':''}<div class="lab-top"><p><span class="small-label">LOCAL JAVA</span> · Files in the same folder compile together.</p><span class="pill green">Ctrl + Enter to run</span></div>${taskNotice}<section class="editor-layout"><aside class="explorer"><div class="explorer-head">EXPLORER <span class="explorer-actions"><button class="icon-btn" data-action="new-file" aria-label="Create file" title="Create file">+</button><button class="icon-btn" data-action="new-folder" aria-label="Create folder" title="Create folder">▱</button></span></div><div id="file-tree">${explorer()}</div><div class="workspace-hint">workspace/<br><br>Each project gets its own folder.<br>Run the file with your main method.</div></aside><div class="editor-main"><div class="editor-toolbar"><div class="file-tab" id="file-tab">${esc(activeFile||'Select a file')}</div><div class="toolbar-actions"><span class="save-label" id="save-label">Saved to disk</span><button class="btn ghost compact" id="save-code">Save</button><button class="btn ghost compact" id="stop-code" disabled>■ Stop</button><button class="btn primary compact" id="run-code">▷ Run</button></div></div><div class="editor-wrap"><pre class="line-numbers" id="line-numbers" aria-hidden="true">1</pre><textarea id="code" class="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Java source code" wrap="off" disabled></textarea></div><div class="editor-bottom"><span id="cursor-status">Ln 1, Col 1</span><span>UTF-8 · JAVA · 4 SPACES</span></div><div class="console-head"><span><b>OUTPUT</b> <span id="run-status" role="status">LOCAL CONSOLE</span></span><button class="icon-btn" id="clear-console" aria-label="Clear output" title="Clear output">⌫</button></div><pre class="console" id="console" role="log" aria-live="polite">&gt; Ready when you are.
+  return heading('04 / THE CODE LAB','Command Prompt — Java Lab','Real Java. Your files. Room to try, break, fix and understand.',`<button class="btn ghost" data-action="new-file">+ New file</button>`)+`${!S.java.ready?'<div class="notice">Java needs a JDK 17 or newer. The editor and file saving work now; install your JDK and restart to enable Run.</div>':''}<div class="lab-top"><p><span class="small-label">LOCAL JAVA</span> · Files in the same folder compile together.</p><div class="lab-quick-actions"><button class="btn ghost compact" id="methods-project">Methods project</button><button class="btn ghost compact" id="open-notes-beside">Notepad beside lab</button><span class="pill green">Ctrl + Enter</span></div></div>${taskNotice}<section class="editor-layout"><aside class="explorer"><div class="explorer-head">EXPLORER <span class="explorer-actions"><button class="icon-btn" data-action="new-file" aria-label="Create file" title="Create file">+</button><button class="icon-btn" data-action="new-folder" aria-label="Create folder" title="Create folder">▱</button></span></div><div id="file-tree">${explorer()}</div><div class="workspace-hint">workspace/<br><br>Each project gets its own folder.<br>Run the file with your main method.</div></aside><div class="editor-main"><div class="editor-toolbar"><button class="btn ghost compact" id="toggle-explorer" aria-label="Toggle project files" aria-expanded="true">Files</button><div class="file-tab" id="file-tab">${esc(activeFile||'Select a file')}</div><div class="toolbar-actions"><span class="save-label" id="save-label">Saved to disk</span><button class="btn ghost compact" id="save-code">Save</button><button class="btn ghost compact" id="stop-code" disabled>■ Stop</button><button class="btn primary compact" id="run-code">▷ Run</button></div></div><div class="editor-tabs" id="editor-tabs" role="tablist" aria-label="Open source files"></div><div class="run-project-bar"><label for="run-target">Run class</label><select id="run-target" aria-label="Run class"></select><span id="project-folder">Same folder = one Java project</span><button class="icon-btn" id="new-class" aria-label="New Java class" title="New Java class">+</button></div><div class="editor-wrap"><pre class="line-numbers" id="line-numbers" aria-hidden="true">1</pre><textarea id="code" class="code-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Java source code" wrap="off" disabled></textarea></div><div class="editor-bottom"><span id="cursor-status">Ln 1, Col 1</span><span>UTF-8 · JAVA · 4 SPACES</span></div><div class="console-head"><span><b>OUTPUT</b> <span id="run-status" role="status">LOCAL CONSOLE</span></span><button class="icon-btn" id="clear-console" aria-label="Clear output" title="Clear output">⌫</button></div><pre class="console" id="console" role="log" aria-live="polite">&gt; Ready when you are.
 &gt; Select a Java file and press Run.</pre><div class="stdin-row"><div class="stdin-caption"><label for="stdin">LIVE INPUT →</label><span>Enter sends · Shift+Enter adds a line · Empty Enter sends a blank line</span></div><div class="stdin-controls"><textarea id="stdin" spellcheck="false" autocomplete="off" maxlength="16000" aria-label="Program input" placeholder="Press Run, then type your answer here…" disabled></textarea><button class="btn ghost compact" id="sample-input" disabled>Use sample</button><button class="btn primary compact" id="send-input" disabled>Send ↵</button></div></div></div></section>`;
 }
 function notes() {
@@ -95,6 +104,11 @@ async function render() {
     if(f)await openFile(f.path);else $('#console').textContent='Create a Java file to get started.';
     $('#save-code').onclick=()=>enqueueSave().then(()=>toast('Saved to disk.')).catch(fail);
     $('#run-code').onclick=run;
+    $('#run-target').onchange=()=>{runTarget=$('#run-target').value;};
+    $('#new-class').onclick=()=>createDialog('new-file',activeFile?activeFile.slice(0,activeFile.lastIndexOf('/')+1)+'Helpers.java':undefined);
+    $('#methods-project').onclick=()=>openMethodsProject().catch(fail);
+    $('#open-notes-beside').onclick=()=>desktopUI.openBeside('notes');
+    $('#toggle-explorer').onclick=()=>{const layout=$('.editor-layout'),hidden=getComputedStyle($('.explorer')).display==='none';layout.classList.toggle('files-hidden',!hidden);layout.classList.toggle('files-open',hidden);$('#toggle-explorer').setAttribute('aria-expanded',String(hidden));};
     if($('#check-code'))$('#check-code').onclick=checkSamples;
     sampleInput=pendingInput || (S.state.activeChallenge?.path===f?.path ? challengeFor(S.state.activeChallenge.key)?.tests?.[0]?.stdin||'' : '');pendingInput='';
     $('#send-input').onclick=sendInput;
@@ -145,19 +159,50 @@ function moduleDialog(i) {
 }
 async function openFile(file) {
   if(desktopUI)desktopUI.show();
+  const version=++fileVersion;
+  const oldEditor=$('#code');if(oldEditor&&activeFile)editorPositions.set(activeFile,{start:oldEditor.selectionStart,end:oldEditor.selectionEnd,top:oldEditor.scrollTop,left:oldEditor.scrollLeft});
   await enqueueSave();
-  const {content}=await api('file?path='+encodeURIComponent(file));
-  activeFile=file;await statePatch({lastFile:file});
+  const {content}=await api('file?path='+encodeURIComponent(file));if(version!==fileVersion)return;
+  activeFile=file;
+  const editorTabs=[...new Set([...(S.state.editorTabs||[]).filter(p=>S.files.some(f=>f.path===p)),file])];
+  await statePatch({lastFile:file,editorTabs});if(version!==fileVersion)return;
   const check=$('#check-code');if(check)check.disabled=file!==S.state.activeChallenge?.path || !!liveSession&&liveSession.phase!=='finished';
   const editor=$('#code');if(!editor)return;
-  editor.disabled=false;editor.value=content;$('#file-tab').textContent=file;
+  editor.disabled=false;editor.value=drafts.get(file)??content;$('#file-tab').textContent=file;$('#file-tab').title=file;drawEditorTabs();updateRunTarget();
+  const position=editorPositions.get(file);if(position){editor.setSelectionRange(position.start,position.end);editor.scrollTop=position.top;editor.scrollLeft=position.left;}
   $('#file-tree').innerHTML=explorer();bindCommon();updateLines();
   $('#save-label').textContent='Saved to disk';
-  editor.oninput=()=>{drafts.set(activeFile,editor.value);$('#save-label').textContent='Saving…';updateLines();clearTimeout(saveTimer);saveTimer=setTimeout(()=>enqueueSave().catch(fail),650);};
+  editor.oninput=()=>{drafts.set(activeFile,editor.value);$('#save-label').textContent='Saving…';drawEditorTabs();updateLines();clearTimeout(saveTimer);saveTimer=setTimeout(()=>enqueueSave().catch(fail),650);};
   editor.onkeydown=e=>{
+    if(e.ctrlKey&&(e.key==='PageUp'||e.key==='PageDown')){e.preventDefault();const tabs=S.state.editorTabs||[],i=tabs.indexOf(activeFile);openFile(tabs[(i+(e.key==='PageDown'?1:tabs.length-1))%tabs.length]).catch(fail);return;}
     if(e.key==='Tab'){e.preventDefault();const a=editor.selectionStart,b=editor.selectionEnd;editor.setRangeText('    ',a,b,'end');editor.dispatchEvent(new Event('input'));}
   };
   editor.onscroll=()=>{$('#line-numbers').scrollTop=editor.scrollTop;};editor.onclick=updateCursor;editor.onkeyup=updateCursor;
+}
+function drawEditorTabs() {
+  const bar=$('#editor-tabs');if(!bar||!S)return;
+  const tabs=(S.state.editorTabs||[]).filter(file=>S.files.some(f=>f.path===file));
+  bar.innerHTML=tabs.map(file=>`<div class="source-tab ${file===activeFile?'active':''}"><button role="tab" aria-selected="${file===activeFile}" aria-controls="code" tabindex="${file===activeFile?0:-1}" data-source-tab="${attr(file)}" title="${attr(file)}">${esc(file.split('/').at(-1))}${drafts.has(file)?'<span aria-label="Unsaved changes"> •</span>':''}</button><button class="close-source-tab" data-close-tab="${attr(file)}" aria-label="Close ${attr(file)}" title="Close tab">×</button></div>`).join('');
+  $$('[data-source-tab]',bar).forEach(b=>{b.onclick=()=>openFile(b.dataset.sourceTab).catch(fail);b.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const i=tabs.indexOf(b.dataset.sourceTab),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length;openFile(tabs[next]).then(()=>$('[data-source-tab][aria-selected="true"]')?.focus()).catch(fail);};});
+  $$('[data-close-tab]',bar).forEach(b=>b.onclick=async()=>{try{await enqueueSave();const file=b.dataset.closeTab,tabs=S.state.editorTabs.filter(p=>p!==file);await statePatch({editorTabs:tabs});if(activeFile===file){if(tabs.length)await openFile(tabs.at(-1));else{activeFile='';$('#code').value='';$('#code').disabled=true;$('#file-tab').textContent='Select a file';updateLines();updateRunTarget();}}drawEditorTabs();}catch(e){fail(e);}});
+}
+function updateRunTarget() {
+  const select=$('#run-target');if(!select)return;
+  const folder=activeFile.slice(0,activeFile.lastIndexOf('/')+1),files=S.files.filter(f=>f.type==='file'&&f.path.endsWith('.java')&&f.path.slice(0,f.path.lastIndexOf('/')+1)===folder);
+  if(!files.some(f=>f.path===runTarget))runTarget=files.find(f=>f.name==='Main.java')?.path || (activeFile.endsWith('.java')?activeFile:'');
+  select.innerHTML=files.map(f=>`<option value="${attr(f.path)}" ${runTarget===f.path?'selected':''}>${esc(f.name.replace(/\.java$/,''))}</option>`).join('');select.disabled=!files.length;
+  $('#project-folder').textContent=folder?folder.replace(/\/$/,'')+' · all Java files compile together':'Open a Java project';
+  $('#run-code').disabled=!runTarget || !!liveSession&&liveSession.phase!=='finished';
+}
+async function openMethodsProject() {
+  await flush();const folder='projects/method-practice/';
+  const files={
+    'Main.java':'public class Main {\n    public static void main(String[] args) {\n        System.out.println(StudyFunctions.greet("Reza"));\n        System.out.println("Double of 21: " + StudyFunctions.doubleValue(21));\n    }\n}\n',
+    'StudyFunctions.java':'public class StudyFunctions {\n    public static String greet(String name) {\n        return "Hello, " + name + "!";\n    }\n\n    public static int doubleValue(int number) {\n        return number * 2;\n    }\n}\n'
+  };
+  for(const [name,content]of Object.entries(files)){if(!S.files.some(f=>f.path===folder+name))S.files=(await api('file',{path:folder+name,content,create:true})).files;}
+  await statePatch({activeChallenge:null,editorTabs:[...new Set([...(S.state.editorTabs||[]),...Object.keys(files).map(n=>folder+n)])],lastFile:folder+'Main.java'});
+  runTarget=folder+'Main.java';await render();toast('Edit StudyFunctions.java, then run Main. Both files compile together.');
 }
 function updateLines(){const el=$('#code');if(!el)return;$('#line-numbers').textContent=Array.from({length:el.value.split('\n').length},(_,i)=>i+1).join('\n');updateCursor();}
 function updateCursor(){const e=$('#code');if(!e)return;const before=e.value.slice(0,e.selectionStart),lines=before.split('\n');$('#cursor-status').textContent=`Ln ${lines.length}, Col ${lines.at(-1).length+1}`;}
@@ -165,7 +210,7 @@ function paintRun() {
   const session=liveSession, consoleEl=$('#console');if(!session||route!=='lab'||!consoleEl)return;
   const active=session.phase!=='finished', accepting=session.phase==='running'&&!session.stopped;
   const wasDisabled=$('#stdin').disabled;
-  $('#run-code').disabled=active;$('#run-code').textContent=active?'Running…':'▷ Run';
+  $('#run-code').disabled=active||!runTarget;$('#run-code').textContent=active?'Running…':'▷ Run';
   $('#stop-code').disabled=!active||session.stopped;
   $('#send-input').disabled=!accepting||sendingInput;$('#stdin').disabled=!accepting;
   $('#sample-input').disabled=!accepting||!sampleInput;
@@ -197,11 +242,11 @@ async function pollRun(session) {
 }
 async function run() {
   const btn=$('#run-code');if(!btn||btn.disabled)return;
-  if(!activeFile.endsWith('.java'))return toast('Select a Java file with a main method.',true);
+  if(!runTarget)return toast('Select a Java class with a main method to run.',true);
   btn.disabled=true;btn.textContent='Compiling…';
   $('#console').classList.remove('error');$('#console').textContent='> Saving and compiling with your local JDK…';
   try {
-    await enqueueSave();const file=activeFile, startedAt=Date.now();
+    await enqueueSave();const file=runTarget, startedAt=Date.now();
     const result=await api('live/start',{path:file});
     liveSession={...result,file,startedAt,clearOffset:0};$('#stdin').value='';paintRun();
     void pollRun(liveSession);
@@ -221,14 +266,16 @@ async function stopRun() {
 }
 
 function createDialog(kind,defaultPath) {
-  const folder=kind==='new-folder';showDialog(`<h2>${folder?'A place for your next project.':'Start with a new file.'}</h2><p>Paths are relative to <code>workspace/</code>. Use a separate folder for each Java project.</p><form id="create-form" class="dialog-form"><div class="field"><label for="new-path">${folder?'Folder path':'File path'}</label><input id="new-path" required value="${attr(defaultPath||(folder?'projects/my-project':'projects/my-project/Main.java'))}" autocomplete="off"></div><p class="field-hint">${folder?'Folders are created on disk.':'Java filenames must match the public class name. A starter main method is added automatically.'}</p><div class="dialog-actions"><button type="button" class="btn ghost" id="cancel">Cancel</button><button class="btn primary">Create ${folder?'folder':'file'}</button></div></form>`);
+  const folder=kind==='new-folder';if(!defaultPath&&!folder&&route==='lab'&&activeFile)defaultPath=activeFile.slice(0,activeFile.lastIndexOf('/')+1)+'Helpers.java';showDialog(`<h2>${folder?'A place for your next project.':'Start with a new file.'}</h2><p>Paths are relative to <code>workspace/</code>. Use a separate folder for each Java project.</p><form id="create-form" class="dialog-form"><div class="field"><label for="new-path">${folder?'Folder path':'File path'}</label><input id="new-path" required value="${attr(defaultPath||(folder?'projects/my-project':'projects/my-project/Main.java'))}" autocomplete="off"></div>${folder?'':'<div class="field"><label for="class-template">Template</label><select id="class-template"><option value="main">Runnable class with main</option><option value="helper" selected>Helper class with a method</option></select></div>'}<p class="field-hint">${folder?'Folders are created on disk.':'Java filenames match the public class name. Keep helper classes beside Main.java so their methods compile with your program.'}</p><div class="dialog-actions"><button type="button" class="btn ghost" id="cancel">Cancel</button><button class="btn primary">Create ${folder?'folder':'file'}</button></div></form>`);
+  if($('#class-template'))$('#class-template').value=$('#new-path').value.endsWith('/Main.java')?'main':'helper';
   $('#cancel').onclick=()=>modal.close();
   $('#create-form').onsubmit=async e=>{
     e.preventDefault();const file=$('#new-path').value.trim();
     try {
       await flush();const cls=file.split('/').at(-1).replace(/\.java$/,'');
       if(!folder&&file.endsWith('.java')&&!/^[A-Za-z_$][\w$]*$/.test(cls))throw new Error('Use a Java class name, such as Main.java.');
-      const content=file.endsWith('.java')?`public class ${cls} {\n    public static void main(String[] args) {\n        // Your code goes here.\n    }\n}\n`:'';
+      const helper=$('#class-template')?.value==='helper';
+      const content=file.endsWith('.java')?(helper?`public class ${cls} {\n    public static int doubleValue(int number) {\n        return number * 2;\n    }\n}\n`:`public class ${cls} {\n    public static void main(String[] args) {\n        // Your code goes here.\n    }\n}\n`):'';
       const r=await api(folder?'folder':'file',{path:file,content,create:true});S.files=r.files;modal.close();toast(folder?'Folder created on disk.':'File created on disk.');
       if(!folder&&/\.(java|txt|md|json|csv)$/i.test(file)){await statePatch({lastFile:file});if(location.hash==='#lab')await render();else location.hash='lab';}else await render();
     }catch(e){fail(e);}
@@ -346,7 +393,7 @@ async function openBundle(key,solution=false) {
 }
 async function checkSamples() {
   const context=S.state.activeChallenge,item=challengeFor(context?.key),btn=$('#check-code');if(!item||!btn||btn.disabled)return;
-  const consoleEl=$('#console');btn.disabled=true;$('#run-code').disabled=true;consoleEl.classList.remove('error');consoleEl.textContent='> Saving, compiling and checking sample cases…';
+  liveSession=null;const consoleEl=$('#console');btn.disabled=true;$('#run-code').disabled=true;consoleEl.classList.remove('error');consoleEl.textContent='> Saving, compiling and checking sample cases…';
   try {
     await enqueueSave();
     const result=await api('check',{path:activeFile,challenge:context.key});
@@ -417,20 +464,20 @@ function updateClock() {
 function searchDialog(){showDialog('<h2>Find your next step.</h2><div class="field"><label for="search-input">Lessons, reference commands, practice and saved files</label><input id="search-input" placeholder="Try loops, code lab or Main.java" autocomplete="off"></div><div class="search-results" id="search-results"></div>');const search=()=>{const q=$('#search-input').value.toLowerCase();const entries=[...nav.map(([id,title])=>({title,detail:'Study space',route:id})),...modules.map((m,i)=>({title:m[0],detail:'Module · '+m[1],module:i})),...lessons.map(x=>({title:x.title,detail:'Lesson · '+x.summary,route:'learn/'+x.id})),...referenceEntries.map(x=>({title:x.name,detail:'Reference · '+x.description,reference:x.id})),...exercises.map(x=>({title:x.title,detail:'Practice · '+x.prompt,route:'practice/'+x.id})),...mockTests.map(x=>({title:x.title,detail:'Mock test · '+x.summary,route:'mocks/'+x.id})),...S.files.filter(x=>x.type==='file').map(x=>({title:x.name,detail:x.path,file:x.path}))].filter(x=>(x.title+' '+x.detail).toLowerCase().includes(q)).slice(0,18);$('#search-results').innerHTML=entries.length?entries.map((x,i)=>`<button class="search-result" data-result="${i}">${esc(x.title)}<small>${esc(x.detail)}</small></button>`).join(''):'<p>No matches. Try another word.</p>';$$('[data-result]').forEach(b=>b.onclick=async()=>{const x=entries[Number(b.dataset.result)];modal.close();if(x.module!==undefined)return moduleDialog(x.module);if(x.reference){referenceCategory='All';referenceQuery=referenceEntries.find(r=>r.id===x.reference).name;if(location.hash==='#reference')return render();location.hash='reference';return;}if(x.file){try{if(!/\.(java|txt|md|json|csv)$/i.test(x.file))return await downloadFile(x.file);await statePatch({lastFile:x.file});if(route==='lab')return await openFile(x.file);location.hash='lab';}catch(e){fail(e);}}else location.hash=x.route;});};$('#search-input').oninput=search;search();}
 $('#open-search').onclick=()=>S&&searchDialog();$('#menu').onclick=()=>$('#sidebar').classList.toggle('open');
 window.addEventListener('hashchange',()=>S&&render().catch(fail));
-window.addEventListener('keydown',e=>{if(!(e.ctrlKey||e.metaKey))return;if(e.key.toLowerCase()==='k'){e.preventDefault();if(S){if(modal.open)modal.close();searchDialog();}}if(e.key.toLowerCase()==='s'){e.preventDefault();if(S)flush().then(()=>toast('Saved to disk.')).catch(fail);}if(e.key==='Enter'&&route==='lab'&&!modal.open){e.preventDefault();run();}});
+window.addEventListener('keydown',e=>{if(!(e.ctrlKey||e.metaKey))return;if(e.key.toLowerCase()==='k'){e.preventDefault();if(S){if(modal.open)modal.close();searchDialog();}}if(e.key.toLowerCase()==='s'){e.preventDefault();if(S)(desktopUI?.flushAll?.()||flush()).then(()=>toast('Saved to disk.')).catch(fail);}if(e.key==='Enter'&&route==='lab'&&!modal.open){e.preventDefault();run();}});
 window.addEventListener('beforeunload',e=>{if(drafts.size||$('#notes-text')?.value!==undefined&&$('#notes-text').value!==S?.state.notes||$('#lesson-answer')&&$('#lesson-answer').value!==(S?.state.lessonAnswers?.[$('#lesson-answer').dataset.lesson]||'')){e.preventDefault();e.returnValue='';}});
 setInterval(updateClock,1000);
 async function desktopAction(action) {
   try {
-    if(action==='save'){await flush();toast('All changes saved to disk.');}
+    if(action==='save'){await (desktopUI?.flushAll?.()||flush());toast('All changes saved to disk.');}
     else if(action==='new-file'||action==='new-folder')createDialog(action);
     else if(action==='search')searchDialog();
     else if(action==='run'){if(route!=='lab')location.hash='lab';else await run();}
     else if(action==='check'){if($('#check-code')&&!$('#check-code').disabled)await checkSamples();else toast('Open a practice task in Command Prompt first.');}
     else if(action==='export-notes'){await flush();downloadBlob('Java Notes.txt',$('#notes-text')?.value??S.state.notes);}
     else if(action==='select-notes'){$('#notes-text')?.focus();$('#notes-text')?.select();}
-    else if(action==='help')showDialog('<h2>Welcome to your Java desktop.</h2><p>Open an application from a desktop shortcut, the Start menu or the taskbar. Drag a title bar to move its window. Use the bottom-right corner to resize.</p><p>My Computer holds your course overview. Course Files contains all 50 lessons. Notepad saves your notes. Command Prompt compiles and runs real Java using your local JDK.</p><p><kbd>Ctrl S</kbd> Save · <kbd>Ctrl K</kbd> Search · <kbd>Ctrl Enter</kbd> Run Java · <kbd>Ctrl Esc</kbd> Start menu</p>');
+    else if(action==='help')showDialog('<h2>Welcome to your Java desktop.</h2><p>Open up to two applications from the desktop or taskbar. Use the left/right title-bar buttons to snap them beside each other. Drag a title bar to move a window, double-click it to maximize, or drag the corner to resize.</p><p>In Command Prompt, open several files as tabs. Run class chooses the program to start; Main runs while you edit a helper class in another tab. Methods project opens a two-file example. Notepad beside lab keeps your notes visible while you code.</p><p><kbd>Ctrl S</kbd> Save · <kbd>Ctrl K</kbd> Search · <kbd>Ctrl Enter</kbd> Run Java · <kbd>Ctrl Esc</kbd> Start menu · <kbd>Ctrl Alt ←/→</kbd> Snap window</p>');
   }catch(e){fail(e);}
 }
-try {S=await api('bootstrap');if(S.live)liveSession={...S.live,clearOffset:0};desktopUI=createDesktop({getState:()=>S,statePatch,onLaunch:hash=>{desktopUI?.show();if(location.hash!==hash)location.hash=hash;},onAction:desktopAction,flush,toast});await render();if(liveSession)void pollRun(liveSession);$('#footer-status').textContent='Saved on this computer';}
+try {S=await api('bootstrap');if(S.live)liveSession={...S.live,clearOffset:0};if(new URLSearchParams(location.search).has('pane')){document.body.classList.add('embedded-pane');window.java1620Pane={flush};}desktopUI=createDesktop({getState:()=>S,statePatch,onLaunch:hash=>{desktopUI?.show();if(location.hash!==hash)location.hash=hash;},onAction:desktopAction,flush,toast});await render();if(liveSession)void pollRun(liveSession);$('#footer-status').textContent='Saved on this computer';}
 catch(e){main.innerHTML=`<section class="panel empty"><h1>Let’s reconnect.</h1><p>${esc(e.message)} Start the app with START.cmd, then refresh this page.</p><button class="btn primary" id="retry">Try again</button></section>`;$('#retry').onclick=()=>location.reload();}
