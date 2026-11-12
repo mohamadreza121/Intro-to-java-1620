@@ -1,9 +1,9 @@
 {
   "name": "1620-java-lab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "A local-first Java study workspace for Reza. Template phase.",
+  "description": "A local-first Java study workspace for Reza. Course content, examples and practice.",
   "engines": { "node": ">=18" },
   "scripts": { "start": "node server.mjs", "dev": "node server.mjs --preview", "test": "node --test test/*.test.mjs" }
 }

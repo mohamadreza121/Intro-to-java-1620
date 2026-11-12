@@ -5,6 +5,7 @@ import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { exercises, mockTests } from '../public/course.js';
 const APP=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 let root, child, base, token;
 async function start(){
@@ -54,4 +55,28 @@ test('notes, theme, timer, run history and edited code survive restart',async()=
 test('a program cannot hang the runner indefinitely',async()=>{
   await api('file',{path:'timeout/Main.java',content:'public class Main { public static void main(String[] a) { while(true) {} } }'});
   const r=await api('run',{path:'timeout/Main.java'});assert.equal(r.timedOut,true);assert.notEqual(r.code,0);assert.match(r.output,/15-second limit/);
+});
+test('sample checker distinguishes wrong output, compiler errors and correct solutions',async()=>{
+  const task=exercises.find(x=>x.id==='multiples');
+  await api('file',{path:'checks/Main.java',content:'public class Main { public static void main(String[] a) { System.out.println("wrong"); } }'});
+  const wrong=await api('check',{path:'checks/Main.java',challenge:'exercise:multiples'});
+  assert.equal(wrong.compiled,true);assert.equal(wrong.passed,0);assert.equal(wrong.total,3);assert.equal(wrong.cases[0].passed,false);
+  await api('file',{path:'checks/Main.java',content:'public class Main { broken }'});
+  const broken=await api('check',{path:'checks/Main.java',challenge:'exercise:multiples'});
+  assert.equal(broken.compiled,false);assert.equal(broken.passed,0);assert.match(broken.compileOutput,/error/);
+  await api('file',{path:'checks/Main.java',content:task.solution['Main.java']});
+  const correct=await api('check',{path:'checks/Main.java',challenge:'exercise:multiples'});
+  assert.equal(correct.passed,correct.total);assert.equal(correct.passed,3);
+  assert.equal((await api('check',{path:'checks/Main.java',challenge:'unknown'})).status,400);
+});
+test('library mock sample tests run with separate classes and persist course progress',async()=>{
+  const task=mockTests.find(x=>x.id==='library');
+  for(const [name,content]of Object.entries(task.solution))await api('file',{path:'library-check/'+name,content});
+  const result=await api('check',{path:'library-check/Main.java',challenge:'mock:library'});
+  assert.equal(result.passed,3);assert.equal(result.total,3);
+  await api('state',{completed:['division-remainder'],bookmarked:['boolean-ranges'],lessonAnswers:{'division-remainder':'Seven is the remainder.'},mockReview:{library:[0,1]},activeChallenge:{key:'mock:library',path:'library-check/Main.java'}});
+  await stop();await start();const b=await api('bootstrap');
+  assert.deepEqual(b.state.completed,['division-remainder']);assert.equal(b.state.checks['mock:library'].passed,3);assert.equal(b.state.lessonAnswers['division-remainder'],'Seven is the remainder.');
+  assert.deepEqual(b.state.mockReview.library,[0,1]);assert.equal(b.state.notes,'A saved insight');
+  const source=await fetch(base+'/course.js');assert.equal(source.status,200);assert.match(await source.text(),/courseModules/);
 });

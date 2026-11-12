@@ -1,6 +1,6 @@
 # 1620 — Java, understood.
 
-A dark, local-first study workspace for Introduction to Java. Terminal-green code, a real Java lab, and your own files on disk. **Build 0.1 is the website template.** Course explanations, full command reference, worked examples, exercise banks and graded mock tests are intentionally waiting for the content phase.
+A dark, local-first study workspace for Introduction to Java. Terminal-green code, a real Java lab, and your own files on disk. **Build 0.2 includes the course content:** 50 lessons in eight modules, 84 reference entries, 34 coding/debugging tasks, and three original mock tests. The explanations and scenarios are based on the uploaded lecture topics, with original modern examples.
 
 ## Run on Reza's Windows computer
 
@@ -52,21 +52,24 @@ node server.mjs
 ## What's functional now
 
 - Overview with actual file and program-attempt counts.
-- Eight planned learning modules, clearly labelled as content pending.
-- Java-reference filters and workspace search (pages, planned modules and saved filenames).
+- Eight learning modules with 50 concise lessons, runnable examples, execution explanations, common mistakes and open-ended knowledge checks. Lesson completion, personal answers and bookmarks are saved on disk.
+- 84 searchable reference entries with syntax, example results and common mistakes. Global search includes lessons, commands, exercises, mocks and filenames.
 - Code lab with line numbers, Tab indentation, autosave, explicit Save and keyboard shortcuts.
 - Real compile/run using your installed JDK; compiler errors and runtime errors are shown in the console.
-- Multi-file Java projects: all `.java` files in the selected file's folder compile together. Select the file containing `main` before running. Keep separate exercises in separate folders. All source files in the folder must compile, even unused ones. Nested source folders and third-party dependencies are not included in this template.
+- Multi-file Java projects: all `.java` files in the selected file's folder compile together. Select the file containing `main` before running. Keep separate exercises in separate folders. All source files in the folder must compile, even unused ones. Nested source folders and third-party dependencies are not included in this version.
 - Standard input: enter all Scanner answers in the input box, one answer per line, before pressing Run. The input stream closes after these answers. This version uses pre-supplied input rather than a live interactive terminal.
 - Local file/folder creation, rename, document import/download and recoverable trash. Document import limit: 20 MB per file. Java/text files open in the editor; binary lecture files download to open in their usual apps.
 - Personal notes, three dark themes, saved activity and a JSON progress export.
-- Library mock-test scenario preview with a non-destructive two-file TODO starter and a persistent 60-minute pause/resume timer. It is self-guided; questions, hints, marking and solutions are not loaded yet.
+- 34 coding and debugging tasks with closed-by-default hints and solutions. Open a starter or saved copy in the lab and use **Check sample tests** for input/expected/actual comparisons.
+- Three original mocks: **Campus print shop (45 min)**, **Network signal report (60 min)**, and **The neighbourhood library (90 min)**. Each has a complete specification, sample cases, hints, runnable solution and a 100-point self-review rubric. Timers persist and support pause/resume.
+- The library mock uses three separate classes: Book, Library and Main. It covers adding, listing, borrowing, returning and searching titles with array capacity and duplicate checks.
+- A Sources & corrections page maps the lectures and corrects known typos and oversimplifications. See [COURSE_COVERAGE.md](COURSE_COVERAGE.md).
 
 Shortcuts: **Ctrl+S** save, **Ctrl+Enter** run Java, **Ctrl+K** search, **Tab** indent code. macOS Cmd equivalents are also supported. The application has no CDN dependencies, analytics, external compiler services or cloud database.
 
 ## Runtime behaviour
 
-The server listens on `127.0.0.1` by default and requires a per-launch token for API calls. It rejects workspace traversal and symlink paths. Java runs as your local user, with ordinary Java access to your computer; it is not a security sandbox. Run your own practice code here. Each compile/run stage has a 15-second limit, output is capped, and the Java process receives a 128 MB heap limit. Only one program runs at a time. No shell interpolation is used for compilation.
+The server listens on `127.0.0.1` by default and requires a per-launch token for API calls. It rejects workspace traversal and symlink paths. Java runs as your local user, with ordinary Java access to your computer; it is not a security sandbox. Run your own practice code here. Each compile/run stage has a 15-second limit, output is capped, and the Java process receives a 128 MB heap limit. Each sample-test execution has a separate 4-second limit. Only one program runs at a time. No shell interpolation is used for compilation.
 
 `npm run dev` is an internal preview mode that binds to all interfaces; use **START.cmd** or **npm start** for normal local work. Change the local port with the `PORT` environment variable if 1620 is already in use. The data root defaults to the app folder regardless of the terminal's working directory.
 
@@ -79,6 +82,26 @@ npm test
 
 The integration checks start an isolated server and use a temporary data directory. They cover Java compilation, multi-file projects, Scanner input, compiler/runtime errors, disk persistence, file operations and request/path protections. A JDK is required for those checks.
 
-## Next: the content phase
+## Using the course
 
-After template approval, populate the course using the uploaded lecture decks and weekly examples. Keep explanations concise, modernize scenarios, and add commands with tiny runnable examples, practice questions, debugging drills and complete mock tests. Include the library-management scenario as a full mock. Lecture source files are intentionally not published in this public repository.
+1. Open **Learning path** and select a lesson. Read the idea and follow the execution walkthrough. Examples always display full Java files.
+2. Use **Open example in lab**. The app creates a copy under `workspace/examples/<lesson-id>/`. It reopens an existing copy without overwriting your edits. Input-based examples load their sample input automatically.
+3. Write an explanation in the lesson's answer box, reveal the explanation when ready, and mark the lesson reviewed.
+4. Open **Practice**, choose a task, and read its exact output contract. Open the starter in `workspace/practice/<task-id>/`. Debugging tasks start with deliberately faulty code.
+5. Use **Check sample tests** in the lab. Compiler errors and expected-versus-actual differences appear in the console. Checks use a fresh JVM for each sample, so a previous sample cannot leave in-memory state for the next one.
+6. Hints and solutions start closed. Opening a solution creates a separate copy in `workspace/solutions/`; your working copy stays intact. Reopening an example, starter or solution preserves its existing files.
+7. For a mock, read the complete brief, start its optional timer and open the project. Use the rubric for your own structural review. Passing samples does not prove all inputs or design requirements are correct.
+
+Sample checks normalize CRLF/LF and trim whitespace around the entire output, but do not ignore extra prompts, interior whitespace or wrong values. They are learning feedback, not an official grade. A checked solution copy can also pass the samples; the app does not claim you independently solved the task.
+
+The timer counts wall-clock time while running, including while the app is closed. Pausing preserves remaining time. Only one mock timer is saved at a time; switching to another asks before replacing it. It does not send notifications while the app is closed.
+
+## Updating from the template
+
+Stop the command window, then run `git pull` from the app folder if you cloned the repository. Start `START.cmd` again and refresh the browser. If using ZIP downloads, replace only application source files and the `public` and `test` folders. Keep your existing `workspace` and `.1620` folders. The server merges new progress fields with existing saved state and does not overwrite the welcome example or prior practice files.
+
+## Content validation
+
+`npm test` includes compilation of every lesson/reference example and every exercise/mock solution: **171 Java bundles with 247 expected-output runs**. Integration checks also cover the sample-check endpoint, failing and passing submissions, the three-class library solution, saved course progress, and preservation of existing notes.
+
+The full uploaded lecture files and assignment are not published. All included teaching explanations, exercises and mock scenarios are original. The A1 source is used only for a design checklist; no completed A1 submission is included.

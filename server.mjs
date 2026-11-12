@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { exercises, mockTests } from './public/course.js';
 
 const APP = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(process.env.JAVA1620_HOME || APP);
@@ -15,7 +16,7 @@ const PORT = Number(process.env.PORT || (portArgument >= 0 ? process.argv[portAr
 const TOKEN = randomBytes(32).toString('hex');
 const JAVA = process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java') : 'java';
 const HELLO = 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("Your next chapter starts here.");\n        System.out.println("Hello, Reza!");\n    }\n}\n';
-let state = { notes: '', runs: 0, completed: [], lastFile: 'playground/Main.java', theme: 'graphite', recentRuns: [], mock: null };
+let state = { notes: '', runs: 0, completed: [], lastFile: 'playground/Main.java', theme: 'graphite', recentRuns: [], mock: null, checks: {}, bookmarked: [], activeChallenge: null, mockReview: {}, lessonAnswers: {} };
 let writeQueue = Promise.resolve();
 let running = false;
 await fs.mkdir(WORK, { recursive: true });
@@ -73,7 +74,7 @@ function execute(args, cwd, input = '', timeout = 15000) {
     child.on('close', code => finish(code ?? -1));
     function finish(code, error = '') {
       if (done) return; done = true; clearTimeout(timer);
-      resolve({ code, output: output + (error ? '\n' + error : '') + (timedOut ? '\nStopped: 15-second limit reached.' : '') + (truncated ? '\nStopped: output limit reached.' : ''), timedOut });
+      resolve({ code, output: output + (error ? '\n' + error : '') + (timedOut ? `\nStopped: ${timeout / 1000}-second limit reached.` : '') + (truncated ? '\nStopped: output limit reached.' : ''), timedOut });
     }
     child.stdin.end(input);
   });
@@ -96,7 +97,7 @@ const server = http.createServer(async (req, res) => {
     if (!PREVIEW && !['127.0.0.1', 'localhost', '[::1]'].includes(new URL('http://' + req.headers.host).hostname)) return json(res, 403, { error: 'Local host only.' });
     if (url.pathname.startsWith('/api/')) {
       if (req.headers['x-lab-token'] !== TOKEN || (req.headers['sec-fetch-site'] && !['same-origin','none'].includes(req.headers['sec-fetch-site']))) return json(res, 403, { error:'Open the lab from its local address.' });
-      if (req.method === 'GET' && url.pathname === '/api/bootstrap') return json(res, 200, { state, files: await tree(), root:ROOT, workspace:WORK, java:{ ready, version:runtime.output.trim(), compiler:compiler.output.trim() }, phase:'template' });
+      if (req.method === 'GET' && url.pathname === '/api/bootstrap') return json(res, 200, { state, files: await tree(), root:ROOT, workspace:WORK, java:{ ready, version:runtime.output.trim(), compiler:compiler.output.trim() }, phase:'course' });
       if (req.method === 'GET' && url.pathname === '/api/file') {
         const target = await safePath(url.searchParams.get('path'));
         const stat = await fs.stat(target);
@@ -112,7 +113,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method !== 'POST') return json(res, 404, { error:'Unknown endpoint.' });
       const body = await readBody(req);
       if (url.pathname === '/api/state') {
-        for (const key of ['notes','completed','lastFile','theme','mock']) if (Object.hasOwn(body,key)) state[key] = body[key];
+        for (const key of ['notes','completed','lastFile','theme','mock','bookmarked','activeChallenge','mockReview','lessonAnswers']) if (Object.hasOwn(body,key)) state[key] = body[key];
         await persist(); return json(res,200,{ state });
       }
       if (url.pathname === '/api/file') {
@@ -138,9 +139,12 @@ const server = http.createServer(async (req, res) => {
         await fs.rename(from,path.join(DATA,'trash',Date.now()+'-'+path.basename(from)));
         return json(res,200,{ files:await tree() });
       }
-      if (url.pathname === '/api/run') {
+      if (url.pathname === '/api/run' || url.pathname === '/api/check') {
         if (running) return json(res,409,{error:'A program is already running. Try again when it finishes.'});
         if (!ready) return json(res,400,{error:'Install a JDK 17 or newer and restart the app to run Java.'});
+        const checking = url.pathname === '/api/check';
+        const challenge = checking ? (String(body.challenge).startsWith('mock:') ? mockTests : exercises).find(x => (String(body.challenge).startsWith('mock:') ? 'mock:' : 'exercise:') + x.id === body.challenge) : null;
+        if (checking && !challenge) throw new Error('Unknown practice task.');
         const selected = await safePath(body.path);
         if (!selected.endsWith('.java')) throw new Error('Select a .java file to run.');
         const className = path.basename(selected,'.java');
@@ -155,7 +159,22 @@ const server = http.createServer(async (req, res) => {
           const cwd = path.dirname(selected);
           const sources = (await fs.readdir(cwd)).filter(x=>x.endsWith('.java')).map(x=>'./'+x);
           const compile = await execute(['-m','jdk.compiler/com.sun.tools.javac.Main','-encoding','UTF-8','-d',build,...sources],cwd);
-          const result = compile.code === 0 ? await execute(['-Xmx128m','-cp',build,packageName ? packageName+'.'+className : className],cwd,String(body.stdin || ''),15000) : compile;
+          const command = ['-Xmx128m','-cp',build,packageName ? packageName+'.'+className : className];
+          if (checking) {
+            const normalize = text => text.replace(/\r\n/g, '\n').trim();
+            const cases = [];
+            if (compile.code === 0) {
+              for (const sample of challenge.tests) {
+                const actual = await execute(command,cwd,sample.stdin,4000);
+                cases.push({ name:sample.name, stdin:sample.stdin, expected:sample.expected, actual:actual.output, exitCode:actual.code, passed:actual.code === 0 && normalize(actual.output) === normalize(sample.expected) });
+              }
+            }
+            const result = { challenge:body.challenge, file:body.path, passed:cases.filter(x=>x.passed).length, total:challenge.tests.length, cases, compileOutput:compile.output, compiled:compile.code === 0, time:new Date().toISOString() };
+            state.checks ||= {}; state.checks[body.challenge] = { file:body.path, passed:result.passed, total:result.total, time:result.time };
+            await persist();
+            return json(res,200,result);
+          }
+          const result = compile.code === 0 ? await execute(command,cwd,String(body.stdin || ''),15000) : compile;
           state.runs++; state.recentRuns.unshift({ file:body.path, time:new Date().toISOString(), code:result.code, stage:compile.code === 0 ? 'run' : 'compile' });
           state.recentRuns = state.recentRuns.slice(0,20); await persist();
           return json(res,200,{...result, stage:compile.code === 0 ? 'run' : 'compile', runs:state.runs, recentRuns:state.recentRuns});
@@ -165,7 +184,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method !== 'GET') return json(res,405,{error:'Method not allowed.'});
     const asset = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-    if (!['index.html','app.js','style.css','favicon.svg'].includes(asset)) return json(res,404,{error:'Not found.'});
+    if (!['index.html','app.js','style.css','favicon.svg','course.js'].includes(asset)) return json(res,404,{error:'Not found.'});
     let bytes = await fs.readFile(path.join(APP,'public',asset));
     if (asset === 'index.html') bytes = bytes.toString().replace('__LAB_TOKEN__',TOKEN);
     res.setHeader('Content-Type',mime[path.extname(asset)] || 'text/plain'); res.setHeader('Cache-Control','no-store'); res.end(bytes);
