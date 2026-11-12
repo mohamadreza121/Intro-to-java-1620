@@ -80,3 +80,11 @@ test('library mock sample tests run with separate classes and persist course pro
   assert.deepEqual(b.state.mockReview.library,[0,1]);assert.equal(b.state.notes,'A saved insight');
   const source=await fetch(base+'/course.js');assert.equal(source.status,200);assert.match(await source.text(),/courseModules/);
 });
+test('desktop assets are served locally and window preferences preserve existing state',async()=>{
+  for(const asset of ['desktop.js','aero.css','icons.svg'])assert.equal((await fetch(base+'/'+asset)).status,200);
+  const wallpaper=await fetch(base+'/wallpaper.jpg');assert.equal(wallpaper.headers.get('content-type'),'image/jpeg');
+  const bytes=new Uint8Array(await wallpaper.arrayBuffer());assert.equal(bytes[0],255);assert.equal(bytes[1],216);
+  const desktop={geometry:{x:150,y:70,width:1000,height:700},maximized:false,compact:true,wordWrap:false};
+  await api('state',{desktop});await stop();await start();const b=await api('bootstrap');
+  assert.deepEqual(b.state.desktop,desktop);assert.equal(b.state.notes,'A saved insight');assert.equal(b.state.checks['mock:library'].passed,3);
+});

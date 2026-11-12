@@ -82,7 +82,7 @@ function execute(args, cwd, input = '', timeout = 15000) {
 const runtime = await execute(['-version'], ROOT);
 const compiler = await execute(['-m', 'jdk.compiler/com.sun.tools.javac.Main', '-version'], ROOT);
 const ready = runtime.code === 0 && compiler.code === 0;
-const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.svg':'image/svg+xml', '.json':'application/json' };
+const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.svg':'image/svg+xml', '.json':'application/json', '.jpg':'image/jpeg' };
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type':'application/json', 'Cache-Control':'no-store' }); res.end(JSON.stringify(body)); };
 async function readBody(req) {
   let body = ''; for await (const data of req) { body += data; if (body.length > 30_000_000) throw new Error('File too large. Maximum upload is 20 MB.'); }
@@ -113,7 +113,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method !== 'POST') return json(res, 404, { error:'Unknown endpoint.' });
       const body = await readBody(req);
       if (url.pathname === '/api/state') {
-        for (const key of ['notes','completed','lastFile','theme','mock','bookmarked','activeChallenge','mockReview','lessonAnswers']) if (Object.hasOwn(body,key)) state[key] = body[key];
+        for (const key of ['notes','completed','lastFile','theme','mock','bookmarked','activeChallenge','mockReview','lessonAnswers','desktop']) if (Object.hasOwn(body,key)) state[key] = body[key];
         await persist(); return json(res,200,{ state });
       }
       if (url.pathname === '/api/file') {
@@ -184,7 +184,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method !== 'GET') return json(res,405,{error:'Method not allowed.'});
     const asset = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
-    if (!['index.html','app.js','style.css','favicon.svg','course.js'].includes(asset)) return json(res,404,{error:'Not found.'});
+    if (!['index.html','app.js','style.css','favicon.svg','course.js','aero.css','desktop.js','icons.svg','wallpaper.jpg'].includes(asset)) return json(res,404,{error:'Not found.'});
     let bytes = await fs.readFile(path.join(APP,'public',asset));
     if (asset === 'index.html') bytes = bytes.toString().replace('__LAB_TOKEN__',TOKEN);
     res.setHeader('Content-Type',mime[path.extname(asset)] || 'text/plain'); res.setHeader('Cache-Control','no-store'); res.end(bytes);

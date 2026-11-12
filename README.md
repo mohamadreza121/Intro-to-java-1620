@@ -1,6 +1,6 @@
 # 1620 — Java, understood.
 
-A dark, local-first study workspace for Introduction to Java. Terminal-green code, a real Java lab, and your own files on disk. **Build 0.2 includes the course content:** 50 lessons in eight modules, 84 reference entries, 34 coding/debugging tasks, and three original mock tests. The explanations and scenarios are based on the uploaded lecture topics, with original modern examples.
+A Windows 7 inspired, local-first study desktop for Introduction to Java. Monochrome graphite Aero windows, a real Java lab, and your own files on disk. **Build 0.3 includes the course content:** 50 lessons in eight modules, 84 reference entries, 34 coding/debugging tasks, and three original mock tests. The explanations and scenarios are based on the uploaded lecture topics, with original modern examples.
 
 ## Run on Reza's Windows computer
 
@@ -105,3 +105,18 @@ Stop the command window, then run `git pull` from the app folder if you cloned t
 `npm test` includes compilation of every lesson/reference example and every exercise/mock solution: **171 Java bundles with 247 expected-output runs**. Integration checks also cover the sample-check endpoint, failing and passing submissions, the three-class library solution, saved course progress, and preservation of existing notes.
 
 The full uploaded lecture files and assignment are not published. All included teaching explanations, exercises and mock scenarios are original. The A1 source is used only for a design checklist; no completed A1 submission is included.
+
+## Windows-style desktop (build 0.3)
+
+The overview is now **My Computer**, lessons are **Course Files**, personal files are **Documents**, notes open in **Notepad**, and the Java lab opens as **Command Prompt**. The full course and saved progress remain available.
+
+- Click a desktop shortcut once to open an application. The taskbar and searchable Start menu also launch apps.
+- Drag the title bar to move the active app window. Drag its lower-right corner to resize. Minimize, maximize, restore, close, and Show desktop work. Double-clicking the title bar toggles maximize.
+- The taskbar remembers opened app locations in the current session. The desktop uses one active content window; switching apps saves pending code/notes before changing the view.
+- Window geometry, maximize state, compact spacing and Notepad word wrap are saved under the existing local state file.
+- Notepad has a paper-style editing area, File/Edit/Format/View menus, autosave, explicit Save and plain-text export.
+- Command Prompt and all code examples use **exact `#00FF00` on `#000000`**, matching the classic CMD **color 0A** palette. UI chrome stays monochromatic.
+- Your supplied computer illustration is included as `public/wallpaper.jpg`. CSS applies monochrome, blending and gradients without altering the source image.
+- The taskbar clock opens a calendar using the computer's local date. Ctrl+Esc opens Start. Ctrl+K still searches the whole course.
+
+These are web app controls and visual styling. They do not control the real Windows desktop or execute operating-system CMD commands. Java still compiles and runs through the installed local JDK. No external fonts, OS icon packages or CDN dependencies are required.

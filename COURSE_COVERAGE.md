@@ -1,6 +1,6 @@
 # ITEC 1620 course coverage
 
-Build 0.2 contains original teaching prose and runnable examples aligned to the uploaded course materials. It reorganizes the topics into eight modules so the user can study one concept at a time. It does not reproduce the lecture decks, textbook pages, official assignment or an official past exam.
+Build 0.3 contains original teaching prose and runnable examples aligned to the uploaded course materials. It reorganizes the topics into eight modules so the user can study one concept at a time. It does not reproduce the lecture decks, textbook pages, official assignment or an official past exam.
 
 | Module | Lessons | Source alignment |
 | --- | ---: | --- |
@@ -61,3 +61,5 @@ The original A1 file is used for a design checklist only. The app does not suppl
 `npm test` compiles 171 Java bundles and runs 247 expected-output checks. It also tests server file operations, persistence across restart, Scanner input, compiler/runtime errors, path/request protections, timeout termination, failing and passing sample-check submissions, the multi-file library mock, and persistence of course progress alongside existing notes.
 
 Browser review covers learning navigation, progress and answer saving, reference search, exercise search, starter launch, failed sample comparisons, separate solution launch, successful samples, and mock/rubric controls. Execution was checked on Node.js 24 and OpenJDK 21 in the build environment. Windows setup is provided but has not been executed on the user's computer.
+
+The build 0.3 desktop redesign preserves this content and adds a monochrome Windows-style shell. Browser review also covers Start search, My Computer, Notepad saving, window minimize/maximize/restore/close, title-bar dragging, resizing, and Java execution in the new Command Prompt. The editor was inspected for exact RGB colors: green (0, 255, 0) on black (0, 0, 0). Desktop assets are served locally, and integration tests verify persisted window preferences alongside existing course data.
