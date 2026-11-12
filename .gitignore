@@ -1,0 +1,5 @@
+workspace/
+.1620/
+node_modules/
+*.log
+.DS_Store
